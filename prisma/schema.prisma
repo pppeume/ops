@@ -1,0 +1,257 @@
+// 외주·유지보수 통합 운영 플랫폼 — 데이터 모델
+// PPTX ERD(사용자/권한 · 기준정보 · 운영 핵심 · 정산/분석/보고)를 개발 관점으로 재구성.
+// SQLite는 enum을 지원하지 않으므로 상태값은 String + 애플리케이션 상수(src/lib/constants.ts)로 관리.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ───────────────────────── 사용자 / 권한 ─────────────────────────
+
+model Affiliation {
+  id        Int      @id @default(autoincrement())
+  name      String // 소속명 (본사/지사 등)
+  users     User[]
+  createdAt DateTime @default(now())
+}
+
+model Role {
+  id        Int      @id @default(autoincrement())
+  name      String // 역할명
+  code      String   @unique // ADMIN / MANAGER / STAFF / VIEWER
+  users     User[]
+  createdAt DateTime @default(now())
+}
+
+model User {
+  id            Int                  @id @default(autoincrement())
+  email         String               @unique
+  name          String
+  passwordHash  String
+  phone         String?
+  status        String               @default("ACTIVE") // ACTIVE / INACTIVE
+  affiliationId Int?
+  affiliation   Affiliation?         @relation(fields: [affiliationId], references: [id])
+  roleId        Int
+  role          Role                 @relation(fields: [roleId], references: [id])
+  siteAssignments UserSiteAssignment[]
+  workLogs      WorkLog[]
+  notices       Notice[]
+  lastLoginAt   DateTime?
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+}
+
+model UserSiteAssignment {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  siteId    Int
+  site      Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, siteId])
+}
+
+// ───────────────────────── 기준정보 ─────────────────────────
+
+model Region {
+  id        Int      @id @default(autoincrement())
+  name      String // 권역명 (수도권/영남권 등)
+  sites     Site[]
+  createdAt DateTime @default(now())
+}
+
+model SiteType {
+  id        Int      @id @default(autoincrement())
+  name      String // 사업소 구분명
+  active    Boolean  @default(true)
+  sites     Site[]
+  createdAt DateTime @default(now())
+}
+
+model OrderType {
+  id        Int      @id @default(autoincrement())
+  name      String // 발주 유형명 (정기점검/긴급보수 등)
+  active    Boolean  @default(true)
+  orders    Order[]
+  createdAt DateTime @default(now())
+}
+
+model Client {
+  id        Int        @id @default(autoincrement())
+  name      String // 발주처명
+  manager   String? // 담당자
+  contact   String? // 연락처
+  status    String     @default("ACTIVE")
+  contracts Contract[]
+  orders    Order[]
+  createdAt DateTime   @default(now())
+}
+
+model Partner {
+  id          Int               @id @default(autoincrement())
+  name        String // 협력업체명
+  industry    String? // 업종
+  manager     String? // 담당자
+  contact     String? // 연락처
+  status      String            @default("ACTIVE")
+  orderLinks  OrderPartner[]
+  workLogs    WorkLog[]
+  payments    Payment[]
+  evaluations PartnerEvaluation[]
+  createdAt   DateTime          @default(now())
+}
+
+model Site {
+  id          Int                  @id @default(autoincrement())
+  name        String // 사업소명
+  address     String?
+  manager     String?
+  contact     String?
+  regionId    Int
+  region      Region               @relation(fields: [regionId], references: [id])
+  siteTypeId  Int
+  siteType    SiteType             @relation(fields: [siteTypeId], references: [id])
+  contracts   Contract[]
+  orders      Order[]
+  assignments UserSiteAssignment[]
+  createdAt   DateTime             @default(now())
+}
+
+model Notice {
+  id        Int      @id @default(autoincrement())
+  title     String
+  content   String
+  pinned    Boolean  @default(false)
+  status    String   @default("PUBLISHED") // PUBLISHED / DRAFT
+  authorId  Int?
+  author    User?    @relation(fields: [authorId], references: [id])
+  createdAt DateTime @default(now())
+}
+
+model Notification {
+  id        Int      @id @default(autoincrement())
+  type      String // STATUS / SETTLEMENT / PAYMENT / NOTICE
+  message   String
+  targetUrl String?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+// ───────────────────────── 운영 핵심 ─────────────────────────
+
+model Contract {
+  id         Int       @id @default(autoincrement())
+  contractNo String    @unique
+  title      String
+  siteId     Int
+  site       Site      @relation(fields: [siteId], references: [id])
+  clientId   Int
+  client     Client    @relation(fields: [clientId], references: [id])
+  startDate  DateTime
+  endDate    DateTime
+  amount     Int       @default(0) // 계약 금액(원)
+  status     String    @default("ACTIVE") // DRAFT / ACTIVE / EXPIRED / TERMINATED
+  orders     Order[]
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+}
+
+model Order {
+  id          Int                 @id @default(autoincrement())
+  orderNo     String              @unique
+  title       String
+  siteId      Int
+  site        Site                @relation(fields: [siteId], references: [id])
+  clientId    Int
+  client      Client              @relation(fields: [clientId], references: [id])
+  orderTypeId Int
+  orderType   OrderType           @relation(fields: [orderTypeId], references: [id])
+  contractId  Int?
+  contract    Contract?           @relation(fields: [contractId], references: [id])
+  startDate   DateTime
+  endDate     DateTime
+  amount      Int                 @default(0) // 발주 금액(원)
+  status      String              @default("RECEIVED") // RECEIVED / IN_PROGRESS / COMPLETED / CLOSED
+  description String?
+  partners    OrderPartner[]
+  workLogs    WorkLog[]
+  deposits    Deposit[]
+  payments    Payment[]
+  evaluations PartnerEvaluation[]
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+}
+
+model OrderPartner {
+  id        Int      @id @default(autoincrement())
+  orderId   Int
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  partnerId Int
+  partner   Partner  @relation(fields: [partnerId], references: [id])
+  role      String? // 주관/협력
+  createdAt DateTime @default(now())
+
+  @@unique([orderId, partnerId])
+}
+
+model WorkLog {
+  id        Int       @id @default(autoincrement())
+  orderId   Int
+  order     Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  partnerId Int?
+  partner   Partner?  @relation(fields: [partnerId], references: [id])
+  authorId  Int?
+  author    User?     @relation(fields: [authorId], references: [id])
+  title     String
+  content   String
+  workedAt  DateTime // 작업일시
+  startedAt DateTime?
+  endedAt   DateTime?
+  createdAt DateTime  @default(now())
+}
+
+// ───────────────────────── 정산 / 분석 / 보고 ─────────────────────────
+
+model Deposit {
+  id          Int      @id @default(autoincrement())
+  orderId     Int
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  amount      Int // 입금 금액(원)
+  depositedAt DateTime
+  status      String   @default("CONFIRMED") // PENDING / CONFIRMED
+  memo        String?
+  createdAt   DateTime @default(now())
+}
+
+model Payment {
+  id        Int      @id @default(autoincrement())
+  orderId   Int
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  partnerId Int
+  partner   Partner  @relation(fields: [partnerId], references: [id])
+  amount    Int // 지급 금액(원)
+  paidAt    DateTime
+  status    String   @default("CONFIRMED") // PENDING / CONFIRMED
+  memo      String?
+  createdAt DateTime @default(now())
+}
+
+model PartnerEvaluation {
+  id          Int      @id @default(autoincrement())
+  orderId     Int
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  partnerId   Int
+  partner     Partner  @relation(fields: [partnerId], references: [id])
+  grade       String // A / B / C / D
+  score       Int // 0-100
+  reason      String?
+  evaluator   String?
+  evaluatedAt DateTime @default(now())
+}
