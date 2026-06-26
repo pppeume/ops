@@ -3,6 +3,9 @@ import { prisma } from "@/lib/db";
 import { verifyPassword, createSession, setSessionCookie } from "@/lib/auth";
 import { ensureInitialized } from "@/lib/bootstrap";
 
+// 최초 로그인 시 스키마 생성 + 데모 시드가 수행될 수 있어 충분한 시간 확보
+export const maxDuration = 60;
+
 export async function POST(req: Request) {
   const { email, password } = await req.json().catch(() => ({}));
   if (!email || !password) {
