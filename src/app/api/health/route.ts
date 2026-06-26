@@ -20,9 +20,14 @@ export async function GET() {
       users,
       time: new Date().toISOString(),
     });
-  } catch {
+  } catch (e) {
     return NextResponse.json(
-      { status: "degraded", db: "down", hint: "DATABASE_URL(Postgres) 환경변수를 확인하세요." },
+      {
+        status: "degraded",
+        db: "down",
+        hint: "Postgres 연결 실패 — 환경변수/연결 문자열을 확인하세요.",
+        detail: e instanceof Error ? e.message.slice(0, 300) : String(e).slice(0, 300),
+      },
       { status: 503 }
     );
   }
