@@ -55,6 +55,48 @@ npm run dev       # http://localhost:3000
 | `npm run db:seed` | 데모 데이터 재생성 |
 | `npm run db:reset` | DB 초기화 후 재시드 |
 
+## 배포 (웹서비스)
+
+### 1) Docker Compose — 어떤 서버에서도 한 줄로 기동 (권장)
+
+```bash
+# 강력한 세션 시크릿을 주입하여 빌드 + 기동
+AUTH_SECRET=$(openssl rand -hex 32) docker compose up -d --build
+```
+
+- `http://localhost:3000` 접속 → `admin@kolon.com / admin1234do!`
+- 컨테이너 기동 시 **자동으로** DB 스키마를 적용하고, 최초 1회 데모 데이터를 시드합니다.
+- 운영 데이터는 `kolon_data` **영구 볼륨**(`/app/data/prod.db`)에 저장되어 재기동해도 유지됩니다.
+- `GET /api/health` 헬스체크 엔드포인트 내장 (컨테이너 `HEALTHCHECK` 연동).
+- 종료: `docker compose down` · 데이터까지 초기화: `docker compose down -v`
+
+> 리버스 프록시(Nginx/Caddy) 뒤에 두고 도메인·HTTPS를 붙이면 그대로 운영 서비스가 됩니다.
+
+### 2) Node 직접 실행 (PM2 / systemd 등)
+
+```bash
+npm ci && npm run build
+DATABASE_URL="file:/var/lib/kolon-ops/prod.db" \
+AUTH_SECRET="$(openssl rand -hex 32)" \
+NODE_ENV=production npm run start -- -H 0.0.0.0 -p 3000
+```
+
+### 3) Vercel / 서버리스 + Postgres
+
+서버리스 환경은 파일 기반 SQLite가 적합하지 않으므로 Postgres로 전환하세요.
+
+1. `prisma/schema.prisma` 의 `datasource db { provider = "postgresql" }` 로 변경
+2. 환경변수 `DATABASE_URL`(Postgres 연결 문자열), `AUTH_SECRET` 설정
+3. 배포 후 최초 1회 `npx prisma db push && npx tsx prisma/seed.ts`
+
+### 환경변수
+
+| 변수 | 설명 | 예시 |
+| --- | --- | --- |
+| `DATABASE_URL` | DB 연결 문자열 | `file:/app/data/prod.db` · `postgresql://...` |
+| `AUTH_SECRET` | 세션 서명 키 (**운영 필수 교체**) | `openssl rand -hex 32` 결과 |
+| `NODE_ENV` | 실행 모드 | `production` |
+
 ## 데이터 모델
 
 PPTX ERD의 4개 도메인을 그대로 반영했습니다.
