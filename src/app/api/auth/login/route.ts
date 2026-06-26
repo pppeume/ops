@@ -1,11 +1,26 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { verifyPassword, createSession, setSessionCookie } from "@/lib/auth";
+import { ensureInitialized } from "@/lib/bootstrap";
 
 export async function POST(req: Request) {
   const { email, password } = await req.json().catch(() => ({}));
   if (!email || !password) {
     return NextResponse.json({ error: "이메일과 비밀번호를 입력해 주세요." }, { status: 400 });
+  }
+
+  // 최초 접속 시 DB 스키마/데모 데이터 자동 초기화 (이미 초기화면 가벼운 체크만)
+  try {
+    await ensureInitialized(prisma);
+  } catch (e) {
+    console.error("[login] DB 초기화 실패:", e);
+    return NextResponse.json(
+      {
+        error:
+          "데이터베이스에 연결할 수 없습니다. 호스팅(예: Vercel)에 Postgres가 연결되어 있고 DATABASE_URL 환경변수가 설정되었는지 확인하세요.",
+      },
+      { status: 503 }
+    );
   }
 
   const user = await prisma.user.findUnique({
