@@ -1,0 +1,39 @@
+# KIOT OPS — 한 줄로 기동되는 웹서비스 (앱 + PostgreSQL)
+#   AUTH_SECRET=$(openssl rand -hex 32) docker compose up -d --build
+# 접속: http://localhost:3000  ·  로그인: admin@kolon.com / admin1234do!
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: kolon-db
+    environment:
+      POSTGRES_USER: kolon
+      POSTGRES_PASSWORD: kolon
+      POSTGRES_DB: kolon
+    volumes:
+      - kolon_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kolon"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  app:
+    build: .
+    image: kolon-ops:latest
+    container_name: kolon-ops
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: "postgresql://kolon:kolon@db:5432/kolon?schema=public"
+      # 운영 배포 시 반드시 강력한 시크릿으로 교체하세요. (openssl rand -hex 32)
+      AUTH_SECRET: "${AUTH_SECRET:-change-this-secret-in-production-please-0a1b2c3d4e5f}"
+      NODE_ENV: "production"
+    restart: unless-stopped
+
+volumes:
+  kolon_pgdata:
